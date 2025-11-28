@@ -14,16 +14,35 @@ if (isset($_POST["add_student"])) {
     $fullname = $_POST["fullname"];
     $email = $_POST["email"];
     $password = password_hash($_POST["password"], PASSWORD_DEFAULT);
+    $group_id = $_POST["group_id"] ?: null;
     $role = "student";
 
-    $insert = $conn->prepare("INSERT INTO users(fullname, email, password, role) VALUES (?,?,?,?)");
-    $insert->execute([$fullname, $email, $password, $role]);
+    $insert = $conn->prepare("INSERT INTO users(fullname, email, password, role, group_id) VALUES (?,?,?,?,?)");
+    $insert->execute([$fullname, $email, $password, $role, $group_id]);
 
     $message = "🎉 Student added successfully!";
 }
 
-// Fetch students
-$students = $conn->query("SELECT * FROM users WHERE role='student' ORDER BY id DESC")->fetchAll();
+// Delete student
+if (isset($_GET["delete"])) {
+    $id = $_GET["delete"];
+    $del = $conn->prepare("DELETE FROM users WHERE id=? AND role='student'");
+    $del->execute([$id]);
+    header("Location: manage_students.php");
+    exit;
+}
+
+// Fetch student groups for dropdown
+$groups = $conn->query("SELECT * FROM student_groups ORDER BY group_name")->fetchAll();
+
+// Fetch students list
+$students = $conn->query("
+    SELECT users.id, fullname, email, student_groups.group_name
+    FROM users
+    LEFT JOIN student_groups ON users.group_id = student_groups.id
+    WHERE role='student'
+    ORDER BY users.id DESC
+")->fetchAll();
 ?>
 <!DOCTYPE html>
 <html>
@@ -36,15 +55,11 @@ body {
     margin: 0;
     padding: 0;
 }
-
-/* Header */
 h1 {
     text-align: center;
     color: #d63384;
     margin-top: 35px;
 }
-
-/* Container grid */
 .container {
     width: 90%;
     margin: auto;
@@ -52,8 +67,6 @@ h1 {
     display: flex;
     gap: 40px;
 }
-
-/* Add form card */
 .add-box {
     flex: 1;
     background: white;
@@ -65,9 +78,7 @@ h1 {
     color: #d63384;
     text-align: center;
 }
-
-/* Input fields */
-input {
+input, select {
     width: 100%;
     padding: 12px;
     margin-bottom: 14px;
@@ -85,11 +96,7 @@ button {
     cursor: pointer;
     margin-top: 5px;
 }
-button:hover {
-    background: #b82d6f;
-}
-
-/* Success message */
+button:hover { background: #b82d6f; }
 .msg {
     background: #ffe1f1;
     color: #b3005c;
@@ -99,8 +106,6 @@ button:hover {
     font-weight: 500;
     text-align: center;
 }
-
-/* STUDENTS TABLE */
 .table-box {
     flex: 2;
     background: white;
@@ -118,24 +123,21 @@ th {
     padding: 12px;
     background: #d63384;
     color: white;
-    border-radius: 6px;
 }
 td {
     padding: 10px;
     border-bottom: 1px solid #ffd6eb;
 }
-.delete-btn {
-    background: #ff4d6d;
+.action-btn {
     padding: 7px 14px;
     border-radius: 7px;
-    color: white;
     text-decoration: none;
+    color: white;
 }
-.delete-btn:hover {
-    background: #cc314f;
-}
-
-/* Back button */
+.edit-btn { background: #1e90ff; }
+.delete-btn { background: #ff4d6d; }
+.edit-btn:hover { background: #0c70d4; }
+.delete-btn:hover { background: #cc314f; }
 .back {
     display: block;
     width: fit-content;
@@ -146,9 +148,7 @@ td {
     padding: 10px 20px;
     border-radius: 8px;
 }
-.back:hover {
-    background: #555;
-}
+.back:hover { background: #555; }
 </style>
 </head>
 <body>
@@ -165,24 +165,37 @@ td {
         <input type="text" name="fullname" placeholder="Full name" required>
         <input type="email" name="email" placeholder="Email" required>
         <input type="password" name="password" placeholder="Password" required>
+
+        <select name="group_id">
+            <option value="">Select Group (optional)</option>
+            <?php foreach ($groups as $g): ?>
+                <option value="<?= $g['id'] ?>"><?= $g['group_name'] ?></option>
+            <?php endforeach; ?>
+        </select>
+
         <button type="submit" name="add_student">➕ Add Student</button>
     </form>
 </div>
 
-<!-- STUDENTS TABLE -->
+<!-- TABLE -->
 <div class="table-box">
     <h2 style="color:#d63384; text-align:center;">Student List</h2>
     <table>
         <tr>
             <th>Full Name</th>
             <th>Email</th>
+            <th>Group</th>
+            <th>Edit</th>
             <th>Delete</th>
         </tr>
         <?php foreach ($students as $s): ?>
         <tr>
+            <td><?= $s["id"]; ?></td>
             <td><?= $s["fullname"]; ?></td>
             <td><?= $s["email"]; ?></td>
-            <td><a class="delete-btn" href="manage_students.php?delete=<?= $s['id']; ?>">🗑 Delete</a></td>
+            <td><?= $s["group_name"] ?: "—" ?></td>
+            <td><a class="action-btn edit-btn" href="student_edit.php?id=<?= $s['id']; ?>">✏ Edit</a></td>
+            <td><a class="action-btn delete-btn" href="manage_students.php?delete=<?= $s['id']; ?>" onclick="return confirm('Delete student?');">🗑 Delete</a></td>
         </tr>
         <?php endforeach; ?>
     </table>

@@ -1,117 +1,120 @@
 <?php
+session_start();
 require "db_connect.php";
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $course_id = trim($_POST["course_id"]);
-    $group_id = trim($_POST["group_id"]);
-    $professor_id = trim($_POST["professor_id"]);
-    $date = date("Y-m-d");
+if (!isset($_SESSION["user_id"]) || $_SESSION["role"] != "professor") {
+    header("Location: login.php");
+    exit;
+}
 
-    if ($course_id == "" || $group_id == "" || $professor_id == "") {
-        $message = "⚠ All fields are required!";
+$prof_id = $_SESSION["user_id"];
+$message = "";
+
+// Fetch courses taught by this professor
+$courses = $conn->prepare("SELECT * FROM courses WHERE professor_id = ?");
+$courses->execute([$prof_id]);
+$courses = $courses->fetchAll(PDO::FETCH_ASSOC);
+
+// Fetch all groups
+$groups = $conn->query("SELECT * FROM student_groups ORDER BY group_name")->fetchAll(PDO::FETCH_ASSOC);
+
+// Create session
+if (isset($_POST["create"])) {
+    $course_id = $_POST["course_id"];
+    $group_id = $_POST["group_id"];
+    $date = $_POST["session_date"];
+
+    // Prevent duplicate sessions for same course + group + day
+    $check = $conn->prepare("
+        SELECT id FROM attendance_sessions 
+        WHERE course_id=? AND group_id=? AND session_date=?
+    ");
+    $check->execute([$course_id, $group_id, $date]);
+
+    if ($check->rowCount() > 0) {
+        $message = "⚠ Session already exists for this course, group and date.";
     } else {
-        $sql = $conn->prepare("INSERT INTO attendance_sessions(course_id, group_id, date, opened_by, status)
-                               VALUES (?, ?, ?, ?, 'open')");
-        $sql->execute([$course_id, $group_id, $date, $professor_id]);
-        $session_id = $conn->lastInsertId();
-        $message = "📌 Session created successfully!<br>🆔 Session ID = <b>$session_id</b>";
+        $insert = $conn->prepare("
+            INSERT INTO attendance_sessions(course_id, group_id, session_date) 
+            VALUES (?, ?, ?)
+        ");
+        $insert->execute([$course_id, $group_id, $date]);
+
+        $message = "🎉 Session created successfully!";
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html>
 <head>
+<title>Create Session</title>
 <style>
-body {
-    font-family: Arial, sans-serif;
-    background: #ffe6f2;
-    margin: 0;
-    padding: 0;
-}
+body { font-family: 'Poppins', sans-serif; background: #edf3ff; }
 .container {
-    width: 45%;
-    margin: 60px auto;
-    background: white;
-    border-radius: 12px;
-    padding: 30px;
-    box-shadow: 0px 0px 15px rgba(255, 0, 120, 0.25);
+    width: 50%; margin: 45px auto; background: white; padding: 30px;
+    border-radius: 18px; box-shadow: 0 6px 18px rgba(0,0,0,0.12);
 }
-h2 {
-    text-align: center;
-    color: #d63384;
-    margin-bottom: 25px;
-}
-input[type=text] {
-    width: 100%;
-    padding: 12px;
-    border-radius: 8px;
-    border: 2px solid #ffb3d9;
-    margin-bottom: 18px;
+h2 { text-align: center; color: #0052cc; font-size: 28px; }
+label { display: block; margin-top: 15px; font-weight: 600; }
+select, input {
+    width: 100%; padding: 12px; margin-top: 7px;
+    border-radius: 8px; border: 1px solid #9eb8e6;
 }
 button {
-    width: 100%;
-    background: #d63384;
-    border: none;
-    padding: 13px;
-    border-radius: 10px;
-    font-size: 17px;
-    color: white;
-    cursor: pointer;
-    transition: 0.3s;
+    width: 100%; padding: 13px; margin-top: 28px;
+    background: #0052cc; border: none; border-radius: 8px;
+    color: white; font-size: 18px; cursor: pointer;
 }
-button:hover {
-    background: #b82d6f;
+button:hover { background: #003d99; }
+.msg {
+    padding: 12px; border-radius: 8px; text-align: center;
+    margin-bottom: 15px; font-weight: 600;
 }
-.message {
-    text-align: center;
-    font-size: 17px;
-    margin-bottom: 18px;
-}
-.success {
-    color: #2b8a3e;
-}
-.error {
-    color: #c1121f;
-}
+.success { background: #e7f8e7; color: #066306; }
+.warning { background: #ffe6e6; color: #b30000; }
 .back-btn {
-    display: block;
-    width: 220px;
-    margin: 20px auto;
-    background: #6c757d;
-    border-radius: 8px;
-    padding: 12px;
-    color: white;
-    text-align: center;
-    font-size: 16px;
-    text-decoration: none;
-    transition: 0.3s;
+    display: block; text-decoration: none; margin: 20px auto;
+    width: fit-content; background: #777; padding: 10px 18px;
+    color: white; border-radius: 7px;
 }
-.back-btn:hover {
-    background: #495057;
-}
+.back-btn:hover { background: #555; }
 </style>
 </head>
 <body>
 
 <div class="container">
-<h2>Create Attendance Session</h2>
+<h2>📅 Create Attendance Session</h2>
 
-<?php if (isset($message)) { ?>
-    <div class="message <?= strpos($message, '⚠') !== false ? 'error' : 'success' ?>">
-        <?= $message ?>
-    </div>
-<?php } ?>
+<?php if ($message): ?>
+<div class="msg <?= str_contains($message, '⚠') ? 'warning' : 'success' ?>">
+    <?= $message ?>
+</div>
+<?php endif; ?>
 
 <form method="POST">
-    <input type="text" name="course_id" placeholder="Course ID (e.g., AWP)">
-    <input type="text" name="group_id" placeholder="Group (e.g., G1)">
-    <input type="text" name="professor_id" placeholder="Professor ID">
-    <button type="submit">🚀 Create Session</button>
-</form>
+    <label>Course</label>
+    <select name="course_id" required>
+        <option value="">— Select course —</option>
+        <?php foreach ($courses as $c): ?>
+        <option value="<?= $c['id'] ?>"><?= $c['course_name'] ?></option>
+        <?php endforeach; ?>
+    </select>
 
-<a href="list_students.php" class="back-btn">⬅ Back to Students</a>
+    <label>Group</label>
+    <select name="group_id" required>
+        <option value="">— Select group —</option>
+        <?php foreach ($groups as $g): ?>
+        <option value="<?= $g['id'] ?>"><?= $g['group_name'] ?></option>
+        <?php endforeach; ?>
+    </select>
+
+    <label>Date</label>
+    <input type="date" name="session_date" required>
+
+    <button type="submit" name="create">➕ Create Session</button>
+</form>
 </div>
 
+<a href="prof_home.php" class="back-btn">⬅ Back to Dashboard</a>
 </body>
 </html>
